@@ -2,3 +2,4 @@ smbus2
 numpy
 pyserial
 RPi.GPIO
+spidev
