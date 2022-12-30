@@ -41,33 +41,55 @@ class Iridium():
         while not self.serial.is_open:
             time.sleep(0.5)
 
-        self.GEO_C = lambda: self.request("AT-MSGEO")  # Current geolocation, xyz cartesian
-        # return format: <x>, <y>, <z>, <time_stamp>
-        # time_stamp uses same 32 bit format as MSSTM
+    def geolocation(self):
+        """
+        Current geolocation, xyz cartesian
+        raw return format: <x>, <y>, <z>, <time_stamp>
+        time_stamp uses same 32 bit format as MSSTM, and indicates when the geolocation was last updated
+        Converts from cartesian to lat/long/alt
+        :return: (tuple) lat, long, altitude, time (unix timestamp)
+        """
+        raw = self.process(self.request("AT-MSGEO"), "MSGEO").split(",")  # raw x, y, z, timestamp
+        timestamp_time = int(raw[3], 16) * 90 / 1000 + Iridium.EPOCH
+        lon = math.degrees(math.atan2(float(raw[1]), float(raw[0])))
+        lat = math.degrees(math.atan2(float(raw[2]), ((float(raw[1]) ** 2 + float(raw[0]) ** 2) ** 0.5)))
+        alt = (float(raw[0]) ** 2 + float(raw[1]) ** 2 + float(raw[2]) ** 2) ** 0.5
+        return (lat, lon, alt, timestamp_time)
 
-        self.REGISTER = lambda location=None: self.request(f"AT+SBDREG={location}") if location \
-            else self.request("AT+SBDREG")
-        # Performs a manual registration, consisting of attach and location update. No MO/MT messages transferred
-        # Optional param location
-
-        self.MODEL = lambda: self.request("AT+CGMM")
-        self.PHONE_REV = lambda: self.request("AT+CGMR")
-        self.IMEI = lambda: self.request("AT+CSGN")
-
-        self.NETWORK_TIME = lambda: self.request("AT-MSSTM")
-        # System time, GMT, retrieved from satellite network (used as a network check)
-        # returns a 32 bit integer formatted in hex, with no leading zeros. Counts number of 90 millisecond intervals
-        # that have elapsed since the epoch current epoch is May 11, 2014, at 14:23:55, and will change again around
-        # 2026
-
-        self.SHUTDOWN = lambda: self.request("AT*F", 1)
+    def register(self, location=None):
+        """
+        Performs a manual registration, consisting of attach and location update. No MO/MT messages transferred
+        Optional param location
+        """
+        if location:
+            self.request(f"AT+SBDREG={location}")
+        else:
+            self.request("AT+SBDREG")
+        
+    def network_time(self):
+        """
+        System time, GMT, retrieved from satellite network (used as a network check)
+        returns a 32 bit integer formatted in hex, with no leading zeros. Counts number of 90 millisecond intervals
+        that have elapsed since the epoch current epoch is May 11, 2014, at 14:23:55, and will change again around
+        2026
+        Requests, reads, processes, and returns current system time retrieved from network
+        :return: (datetime) current time (use str() to parse to string if needed)
+        """
+        raw = self.NETWORK_TIME()
+        if raw.find("OK") == -1:
+            raise IridiumError()
+        if raw.find("no network service") != -1:
+            raise NoSignalException()
+        raw = raw.split("MSSTM:")[1].split("\n")[0].strip()
+        if is_hex(raw):
+            processed = int(raw, 16) * 90 / 1000
+            return datetime.datetime.fromtimestamp(processed + Iridium.EPOCH)
+        return None
+        
         self.RSSI = lambda: self.request("AT+CSQ", 10)  
         # Returns strength of satellite connection, may take up to ten seconds if iridium is in satellite handoff
         self.LAST_RSSI = lambda: self.request("AT+CSQF")  
         # Returns last known signal strength, immediately
-
-        self.CIER = lambda ls: self.request("AT+CIER=" + ",".join([str(s) for s in ls]))
-        # Sets unsolicited notifications of signal strength on or off
 
         self.RING_ALERT = lambda b="": self.request(f"AT+SBDMTA{b}")
         # Enable or disable ring indications for SBD Ring Alerts. When ring indication is enabled, ISU asserts RI
@@ -134,7 +156,7 @@ class Iridium():
     def terminate(self):
         try:
             self.check_buffer()
-            self.SHUTDOWN()
+            self.request("AT*F", 1)
         except:  # serial doesn't work
             pass
         self.serial.close()
@@ -161,13 +183,13 @@ class Iridium():
         self.serial_test()
         result = self.request("AT+SBDWT=test")
         if result.find("OK") == -1:
-            raise IridiumError(details="Error writing to MO")
+            return False
         result = self.request("AT+SBDTC", 1)
         if result.find("Outbound SBD Copied to Inbound SBD: size = 4") == -1:
-            raise IridiumError(details="Error transferring buffers")
+            return False
         result = self.request("AT+SBDRT")
         if result.find("test") == -1:
-            raise IridiumError(details="Error reading message from MT")
+            return False
         self.write("AT+SBDD2")  # clear all buffers
         return True
 
@@ -250,12 +272,6 @@ class Iridium():
         if self.SBD_CLR(2).find("0\r\n\r\nOK") == -1:
             raise IridiumError(details="Error clearing buffers")
         result = self.transmit_raw(raw := self.encode(packet))
-        self.sfr.logs["transmission"].write({  # Log transmission
-            "ts0": (t := time.time()) // 100000,
-            "ts1": int(t % 100000),
-            "radio": "Iridium",
-            "size": len(raw),
-        })
         if result[0] not in [0, 1, 2, 3, 4]:
             match result[0]:
                 case 33:
@@ -314,7 +330,6 @@ class Iridium():
         self.SBD_TIMEOUT(60)  # 60 second timeout for transmit
         sttime = time.perf_counter()
         result = [int(s) for s in self.process(self.SBD_INITIATE_EX(), "SBDIX").split(",")]
-        self.sfr.vars.BATTERY_CAPACITY_INT -= (time.perf_counter() - sttime) * Iridium.AVG_TRANSMISSION_POWER
         return result
 
     def check_buffer(self):
@@ -376,44 +391,6 @@ class Iridium():
         if self.SBD_CLR(2).find("0\r\n\r\nOK") == -1:
             raise IridiumError(details="Error clearing buffers")
 
-    def processed_time(self):
-        """
-        Requests, reads, processes, and returns current system time retrieved from network
-        :return: (datetime) current time (use str() to parse to string if needed)
-        """
-        raw = self.NETWORK_TIME()
-        if raw.find("OK") == -1:
-            raise IridiumError()
-        if raw.find("no network service") != -1:
-            raise NoSignalException()
-        raw = raw.split("MSSTM:")[1].split("\n")[0].strip()
-        if is_hex(raw):
-            processed = int(raw, 16) * 90 / 1000
-            return datetime.datetime.fromtimestamp(processed + Iridium.EPOCH)
-        return None
-
-    def processed_geolocation(self):
-        """
-        Requests, reads, processes, and returns current geolocation
-        :return: (tuple) lat, long, altitude (0,0,0 if unable to retrieve)
-        """
-        raw = self.process(self.GEO_C(), "MSGEO").split(",")  # raw x, y, z, timestamp
-        timestamp_time = int(raw[3], 16) * 90 / 1000 + Iridium.EPOCH
-        current_time = self.processed_time()
-        if current_time is None:
-            return (0, 0, 0)
-        if current_time.timestamp() - timestamp_time > 60:
-            # Checks if time passed since last geolocation update has been more than 60 seconds
-            result = [int(s) for s in self.process(self.SBD_INITIATE_EX(), "SBDIX").split(",")]  
-            # Use SBDIX to update geolocation
-            if result[0] not in [0, 1, 3, 4]:
-                return (0, 0, 0)
-            raw = self.process(self.GEO_C(), "MSGEO").split(",")  # try again
-        lon = math.degrees(math.atan2(float(raw[1]), float(raw[0])))
-        lat = math.degrees(math.atan2(float(raw[2]), ((float(raw[1]) ** 2 + float(raw[0]) ** 2) ** 0.5)))
-        alt = (float(raw[0]) ** 2 + float(raw[1]) ** 2 + float(raw[2]) ** 2) ** 0.5
-        return (lat, lon, alt)
-
     def request(self, command: str, timeout=0.5) -> str:
         """
         Requests information from Iridium and returns unprocessed response
@@ -442,7 +419,7 @@ class Iridium():
         :param command: (str) Command to write
         :return: (bool) if the serial write worked
         """
-        self.serial.write((command + "\r\n").encode("utf-8"))
+        self.serial.write((command + "\r").encode("utf-8"))
         return True
 
     def read(self) -> str:
