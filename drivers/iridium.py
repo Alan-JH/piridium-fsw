@@ -49,7 +49,7 @@ class Iridium():
         Converts from cartesian to lat/long/alt
         :return: (tuple) lat, long, altitude, time (unix timestamp)
         """
-        raw = self.process(self.request("AT-MSGEO"), "MSGEO").split(",")  # raw x, y, z, timestamp
+        raw = self.process("AT-MSGEO").split(",")  # raw x, y, z, timestamp
         timestamp_time = int(raw[3], 16) * 90 / 1000 + Iridium.EPOCH
         lon = math.degrees(math.atan2(float(raw[1]), float(raw[0])))
         lat = math.degrees(math.atan2(float(raw[2]), ((float(raw[1]) ** 2 + float(raw[0]) ** 2) ** 0.5)))
@@ -59,35 +59,52 @@ class Iridium():
     def register(self, location=None):
         """
         Performs a manual registration, consisting of attach and location update. No MO/MT messages transferred
-        Optional param location
+        Optional param location: format [+|-]DDMM.MMM,[+|-]dddmm.mmm
         """
         if location:
-            self.request(f"AT+SBDREG={location}")
-        else:
-            self.request("AT+SBDREG")
+            return self.process("AT+SBDREG", "=" + location)
+        return self.process("AT+SBDREG")
         
     def network_time(self):
         """
         System time, GMT, retrieved from satellite network (used as a network check)
         returns a 32 bit integer formatted in hex, with no leading zeros. Counts number of 90 millisecond intervals
-        that have elapsed since the epoch current epoch is May 11, 2014, at 14:23:55, and will change again around
-        2026
+        that have elapsed since the epoch
         Requests, reads, processes, and returns current system time retrieved from network
         :return: (datetime) current time (use str() to parse to string if needed)
         """
-        raw = self.NETWORK_TIME()
+        raw = self.request("AT-MSSTM")
         if raw.find("OK") == -1:
-            raise IridiumError()
+            return None
         if raw.find("no network service") != -1:
-            raise NoSignalException()
+            return None
         raw = raw.split("MSSTM:")[1].split("\n")[0].strip()
         if is_hex(raw):
             processed = int(raw, 16) * 90 / 1000
             return datetime.datetime.fromtimestamp(processed + Iridium.EPOCH)
         return None
+
+    def check_signal_active(self):
+        """
+        Returns strength of satellite connection, may take up to ten seconds if iridium is in satellite handoff
+        Actively check signal strength, for transmit/receive timing
+        """
+        raw = self.request("AT+CSQ", 10)  
+        if raw.find("CSQ:") == -1:
+            return 0
+        return int(raw[raw.find("CSQ:") + 4: raw.find("CSQ:") + 5])
+
+    def check_signal_passive(self):
+        """
+        Passively check signal strength, for transmit/receive timing. By default updates every 40 seconds
+        """
+        raw = self.LAST_RSSI()
+        if raw.find("CSQF:") == -1:
+            return 0
+        return int(raw[raw.find("CSQF:") + 5: raw.find("CSQF:") + 6])
         
-        self.RSSI = lambda: self.request("AT+CSQ", 10)  
-        # Returns strength of satellite connection, may take up to ten seconds if iridium is in satellite handoff
+        self.RSSI = lambda: 
+        # 
         self.LAST_RSSI = lambda: self.request("AT+CSQF")  
         # Returns last known signal strength, immediately
 
@@ -193,31 +210,14 @@ class Iridium():
         self.write("AT+SBDD2")  # clear all buffers
         return True
 
-    def check_signal_active(self):
-        """
-        Passively check signal strength, for transmit/receive timing
-        """
-        raw = self.RSSI()
-        if raw.find("CSQ:") == -1:
-            return 0
-        return int(raw[raw.find("CSQ:") + 4: raw.find("CSQ:") + 5])
-
-    def check_signal_passive(self):
-        """
-        Passively check signal strength, for transmit/receive timing
-        """
-        raw = self.LAST_RSSI()
-        if raw.find("CSQF:") == -1:
-            return 0
-        return int(raw[raw.find("CSQF:") + 5: raw.find("CSQF:") + 6])
-
-    def process(self, data, cmd):
+    def process(self, cmd, arg=""):
         """
         Clean up data string
-        :param data: (str) to format
-        :param cmd: (str) command, do not include AT prefix
+        :param cmd: (str) command, including AT+ or AT- prefix
+        :param arg: (str) argument
         """
-        return data.split(cmd + ":")[1].split("\r\nOK")[0].strip()
+        data = self.request(cmd + arg)
+        return data.split(cmd[3:] + ":")[1].split("\r\nOK")[0].strip()
 
     def split_packet(packet: TransmissionPacket) -> list:
         """
@@ -398,8 +398,6 @@ class Iridium():
         :param timeout: maximum time to wait for a response
         :return: (str) Response from Iridium
         """
-        if not self.serial.is_open:
-            self.serial.open()
         self.serial.flush()
         self.write(command)
         result = ""
@@ -411,7 +409,7 @@ class Iridium():
                 return command[2:] + "ERROR" + "\n"  # formatted so that process() can still decode properly
             if result.find("OK") != -1:
                 return result
-        raise IridiumError(details="Incomplete response")
+        raise ValueError("Iridium Timeout")
 
     def write(self, command: str) -> bool:
         """
