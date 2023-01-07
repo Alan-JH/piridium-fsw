@@ -41,9 +41,91 @@ class Iridium():
         while not self.serial.is_open:
             time.sleep(0.5)
 
+    def net_avail(self):
+        """
+        Uses GPIO to determine whether network is available
+        """
+        return self.gpio.net_available()
+        
+    def sbd_status(self):
+        """
+        Calls AT+SBDS
+        """
+        return [int(i) for i in self.process("AT+SBDS").split(",")]
+
+    def read_mt(self):
+        """
+        Checks buffer for existing messages
+        Doesnt use request because we don't to decode as utf-8
+        """
+        self.write("AT+SBDRB")
+        raw = self.serial.read(50)
+        t = time.perf_counter()
+        while raw.find(b'OK') == -1:
+            if time.perf_counter() - t > 5:
+                raise ValueError("Iridium Timeout")
+            raw += self.serial.read(50)
+        raw = raw[raw.find(b'SBDRB\r\n') + 7:].split(b'\r\nOK')[0]
+        return list(raw)
+
+    def load_mo(self, message):
+        """
+        Loads message into mo buffer
+        :param message: (list) raw byte message to send
+        """
+        length = len(message)
+        checksum = sum(message) & 0xffff
+        message.append(checksum >> 8)  # add checksum bytes
+        message.append(checksum & 0xff)
+        self.SBD_WB(length)  # Specify bytes to write
+        time.sleep(1)  # 1 second to respond
+        if self.read().find("READY") == -1:
+            raise ValueError("Iridium Timeout")
+        self.serial.write(message)
+        time.sleep(1)  # 1 second to respond
+        result = ""
+        t = time.perf_counter()
+        while result.find("OK") == -1:
+            if time.perf_counter() - t > 5:
+                raise ValueError("Iridium Timeout")
+            result += self.read()
+        i = int(result.split("\r\n")[1])  # '\r\n0\r\n\r\nOK\r\n' format
+        if i == 1:
+            raise ValueError("Iridium Timeout")
+        if i == 2:
+            raise ValueError("Incorrect Checksum")
+        if i == 3:
+            raise ValueError("Message too long")
+
+    def sbd_initiate_x(self):
+        """
+        AT+SBDIX call
+        """
+        return [int(i) for i in self.process("AT+SBDIX", timeout=60).split(",")]
+
+    def network_time(self):
+        """
+        System time, GMT, retrieved from satellite network (used as a network check)
+        returns a 32 bit integer formatted in hex, with no leading zeros. Counts number of 90 millisecond intervals
+        that have elapsed since the epoch
+        Requests, reads, processes, and returns current system time retrieved from network
+        :return: (datetime) current time (use str() to parse to string if needed)
+        """
+        raw = self.request("AT-MSSTM")
+        if raw.find("OK") == -1:
+            return None
+        if raw.find("no network service") != -1:
+            return None
+        raw = raw.split("MSSTM:")[1].split("\n")[0].strip()
+        if is_hex(raw):
+            processed = int(raw, 16) * 90 / 1000
+            return datetime.datetime.fromtimestamp(processed + Iridium.EPOCH)
+        return None
+
+
     def geolocation(self):
         """
-        Current geolocation, xyz cartesian
+        Current geolocation
         raw return format: <x>, <y>, <z>, <time_stamp>
         time_stamp uses same 32 bit format as MSSTM, and indicates when the geolocation was last updated
         Converts from cartesian to lat/long/alt
@@ -64,25 +146,6 @@ class Iridium():
         if location:
             return self.process("AT+SBDREG", "=" + location)
         return self.process("AT+SBDREG")
-        
-    def network_time(self):
-        """
-        System time, GMT, retrieved from satellite network (used as a network check)
-        returns a 32 bit integer formatted in hex, with no leading zeros. Counts number of 90 millisecond intervals
-        that have elapsed since the epoch
-        Requests, reads, processes, and returns current system time retrieved from network
-        :return: (datetime) current time (use str() to parse to string if needed)
-        """
-        raw = self.request("AT-MSSTM")
-        if raw.find("OK") == -1:
-            return None
-        if raw.find("no network service") != -1:
-            return None
-        raw = raw.split("MSSTM:")[1].split("\n")[0].strip()
-        if is_hex(raw):
-            processed = int(raw, 16) * 90 / 1000
-            return datetime.datetime.fromtimestamp(processed + Iridium.EPOCH)
-        return None
 
     def check_signal_active(self):
         """
@@ -98,15 +161,10 @@ class Iridium():
         """
         Passively check signal strength, for transmit/receive timing. By default updates every 40 seconds
         """
-        raw = self.LAST_RSSI()
+        raw = self.request("AT+CSQF")  
         if raw.find("CSQF:") == -1:
             return 0
         return int(raw[raw.find("CSQF:") + 5: raw.find("CSQF:") + 6])
-        
-        self.RSSI = lambda: 
-        # 
-        self.LAST_RSSI = lambda: self.request("AT+CSQF")  
-        # Returns last known signal strength, immediately
 
         self.RING_ALERT = lambda b="": self.request(f"AT+SBDMTA{b}")
         # Enable or disable ring indications for SBD Ring Alerts. When ring indication is enabled, ISU asserts RI
@@ -127,7 +185,6 @@ class Iridium():
         # Read message from mobile terminated buffer. SBDRT uses text, SBDRB uses binary. Only one message is
         # contained in buffer at a time
         self.SBD_RT = lambda: self.request("AT+SBDRT")
-        self.SBD_RB = lambda: self.write("AT+SBDRB")
 
         # Returns state of mobile originated and mobile terminated buffers
         # SBDS return format: <MO flag>, <MOMSN>, <MT flag>, <MTMSN>
@@ -210,49 +267,15 @@ class Iridium():
         self.write("AT+SBDD2")  # clear all buffers
         return True
 
-    def process(self, cmd, arg=""):
+    def process(self, cmd, arg="", timeout=0.5):
         """
         Clean up data string
         :param cmd: (str) command, including AT+ or AT- prefix
         :param arg: (str) argument
+        :param timeout: (float) seconds before it gives up
         """
-        data = self.request(cmd + arg)
+        data = self.request(cmd + arg, timeout)
         return data.split(cmd[3:] + ":")[1].split("\r\nOK")[0].strip()
-
-    def split_packet(packet: TransmissionPacket) -> list:
-        """
-        Splits the packet into a list of packets which abide by size limits
-        """
-        if len(packet.return_data) == 0:
-            # Special case to avoid losing packets with zero data
-            return [packet]
-
-        FLOAT_LEN = 3
-
-        DESCRIPTOR_LEN = 4
-        if packet.response:
-            DESCRIPTOR_LEN = 7
-        elif packet.numerical:
-            DESCRIPTOR_LEN = 5
-
-        if packet.numerical:
-            data = packet.return_data
-            ls = [data[0 + i:(Iridium.MAX_DATASIZE-DESCRIPTOR_LEN)//FLOAT_LEN + i] for i in range(
-                0, len(data), (Iridium.MAX_DATASIZE-DESCRIPTOR_LEN)//FLOAT_LEN)]
-            result = [copy.deepcopy(packet) for _ in range(len(ls))]
-            for _ in range(len(ls)):
-                result[_].return_data = ls[_]
-                result[_].index = _
-        else:
-            data = packet.return_data[0]
-            if len(data) == 0:
-                return [packet]
-            ls = [data[0 + i:Iridium.MAX_DATASIZE-DESCRIPTOR_LEN + i] for i in range(0, len(data), Iridium.MAX_DATASIZE-DESCRIPTOR_LEN)]
-            result = [copy.deepcopy(packet) for _ in range(len(ls))]
-            for _ in range(len(ls)):
-                result[_].return_data = [ls[_]]
-                result[_].index = _
-        return result
 
     def transmit(self, packet: TransmissionPacket, discardmtbuf=False) -> bool:
         """
@@ -295,72 +318,11 @@ class Iridium():
             raise IridiumError(details="Error clearing buffers")
         return True
 
-    def transmit_raw(self, message):
-        """
-        Transmits raw message using SBDWB, ignore MT buffer
-        Use as a helper function for transmit
-        :param message: (list) message, of encoded bytes.
-        """
-        rssi = self.RSSI()
-        if rssi.find("CSQ:0") != -1 or rssi.find("OK") == -1:  # check signal strength first
-            raise NoSignalException(details="No Signal")
-        length = len(message)
-        checksum = sum(message) & 0xffff
-        message.append(checksum >> 8)  # add checksum bytes
-        message.append(checksum & 0xff)
-        self.SBD_WB(length)  # Specify bytes to write
-        time.sleep(1)  # 1 second to respond
-        if self.read().find("READY") == -1:
-            raise IridiumError(details="Serial Timeout")
-        self.serial.write(message)
-        time.sleep(1)  # 1 second to respond
-        result = ""
-        t = time.perf_counter()
-        while result.find("OK") == -1:
-            if time.perf_counter() - t > 5:
-                raise IridiumError(details="Serial Timeout")
-            result += self.read()
-        i = int(result.split("\r\n")[1])  # '\r\n0\r\n\r\nOK\r\n' format
-        if i == 1:
-            raise IridiumError(details="Serial Timeout")
-        if i == 2:
-            raise IridiumError(details="Incorrect Checksum")
-        if i == 3:
-            raise IridiumError(details="Message too long")
-        self.SBD_TIMEOUT(60)  # 60 second timeout for transmit
-        sttime = time.perf_counter()
-        result = [int(s) for s in self.process(self.SBD_INITIATE_EX(), "SBDIX").split(",")]
-        return result
-
-    def check_buffer(self):
-        """
-        Checks buffer for existing messages
-        """
-        stat = self.SBD_STATUS()
-        ls = self.process(stat, "SBDS").split(",")
-        if int(ls[2]) == 1:  # Save MT to sfr
-            try:
-                self.SBD_RB()
-                raw = self.serial.read(50)
-                t = time.perf_counter()
-                while raw.find(b'OK') == -1:
-                    if time.perf_counter() - t > 5:
-                        raise IridiumError(details="Serial Timeout")
-                    raw += self.serial.read(50)
-                raw = raw[raw.find(b'SBDRB\r\n') + 7:].split(b'\r\nOK')[0]
-                self.sfr.vars.command_buffer.append(FullPacket(*self.decode(list(raw)), int(ls[3])))
-            except Exception as e:
-                self.sfr.vars.command_buffer.append(FullPacket("GRB", [repr(e)], int(ls[3])))
-                # Append garbled message indicator and msn, args set to exception string to debug
-        if self.SBD_CLR(2).find("0\r\n\r\nOK") == -1:
-            raise IridiumError(details="Error clearing buffers")
-
     def next_msg(self):
         """
         Stores next received messages in sfr
         """
         self.check_buffer()
-        self.SBD_TIMEOUT(60)
         time.sleep(1)
         result = [0, 0, 0, 0, 0, 1]
         lastqueued = []
@@ -371,7 +333,7 @@ class Iridium():
                 break  # If GSS queue is not changing, don't bother to keep trying, just break
             if result[2] == 1:
                 try:
-                    self.SBD_RB()
+                    self.write("AT+SBDRB")
                     raw = self.serial.read(50)
                     t = time.perf_counter()
                     while raw.find(b'OK') == -1:
