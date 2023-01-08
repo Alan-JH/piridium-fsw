@@ -66,9 +66,7 @@ class Comms():
             os.system("sudo hwclock -w")  # Write to RTC        
 
     def geolocation(self, timeout):
-        # Registers and returns geolocation
-        # sbd registration
-        # geolocation call
+        return self.radio.geolocation() # add error handling
 
     def disconnect(self):
         """

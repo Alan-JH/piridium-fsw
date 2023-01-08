@@ -138,7 +138,7 @@ class Iridium():
 
     def geolocation(self):
         """
-        Current geolocation
+        Geolocation at time of last contact with iridium constellation
         raw return format: <x>, <y>, <z>, <time_stamp>
         time_stamp uses same 32 bit format as MSSTM, and indicates when the geolocation was last updated
         Converts from cartesian to lat/long/alt
