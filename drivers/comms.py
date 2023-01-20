@@ -205,5 +205,5 @@ class Packet():
     def __str__(self):
         return f"{self.descriptor} at {self.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}, index: {self.index}, numerical {self.numerical}: {self.return_data}"
 
-    def __set_time(self):
+    def set_time(self):
         self.timestamp = datetime.datetime.utcnow()
