@@ -822,11 +822,10 @@ class IMU_I2C(IMU):
     """
     Driver for the BNO055 9DOF IMU sensor via I2C.
     """
-    def __init__(self, state_field_registry, addr=0x28):
+    def __init__(self, addr=0x28):
         self.buffer = bytearray(2)
         self.address = addr
         self.bus = SMBus(1)
-        super().__init__(state_field_registry)
 
     def _write_register(self, register, value):
         self.buffer[0] = register

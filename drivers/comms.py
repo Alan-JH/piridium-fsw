@@ -8,11 +8,11 @@ class Comms():
     MAX_PACKET_SIZE = 300
     HEADER_SIZE = 4
     FLOAT_LEN = 3
-    def __init__(self, gpio):
+    def __init__(self, gpio, time_err_threshold = 120):
         self.radio = Iridium(gpio)
         self.transmission_queue = []
         self.received_queue = []
-        self.TIME_ERR_THRESHOLD = 120 # Two minutes acceptable time error between iridium and rtc
+        self.TIME_ERR_THRESHOLD = time_err_threshold # Two minutes acceptable time error between iridium and rtc
 
     def append_to_queue(self, packet):
         """
@@ -31,7 +31,7 @@ class Comms():
             self.transmission_queue.append(result[i])
 
 
-    def encode(self, packet):
+    def __encode(self, packet):
         """
         Encodes a packet to raw byte list. Does NOT consider packet length
         :param packet: (Packet) packet to encode
@@ -88,7 +88,7 @@ class Comms():
                 encoded.append(d)
         return encoded
 
-    def decode(self, message):
+    def __decode(self, message):
         """
         Decodes processed SBDRB output and converts to packet
         :param message: (byte string) sbdrb output
@@ -205,5 +205,5 @@ class Packet():
     def __str__(self):
         return f"{self.descriptor} at {self.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}, index: {self.index}, numerical {self.numerical}: {self.return_data}"
 
-    def set_time(self):
+    def __set_time(self):
         self.timestamp = datetime.datetime.utcnow()
