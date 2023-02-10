@@ -20,4 +20,4 @@ class ADC():
         control = (0b11 << 3) | (channel & 0b111) # Start bit, single ended mode, then channel select bits
         mosi = [control >> 2, (control & 0b11) << 6, 0x00] # See fig 6-1 in mcp3208 datasheet
         miso = self.spibus.xfer2(mosi)
-        return ADC_VREF * (((miso[1] & 0xf) << 8) | miso[2]) / 4096
+        return self.ADC_VREF * (((miso[1] & 0xf) << 8) | miso[2]) / 4096
