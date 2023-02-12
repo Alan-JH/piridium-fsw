@@ -94,7 +94,7 @@ class Comms():
     
     def contact(self):
         """
-        Transmits contents of transmission queue while reading in messages to received queue, and updates time with Iridium time
+        Transmits contents of transmission queue while reading in messages to received queue
         """
         # Check receive buffer
         stat = self.radio.sbd_status()
@@ -122,8 +122,11 @@ class Comms():
                 break
         #clear sbd buffers
         self.radio.clear_buffers()
-
-        # update time
+    
+    def update_time(self):
+        """
+        Updates system time from Iridium time
+        """
         current_datetime = datetime.datetime.utcnow()
         time = self.radio.network_time()
         if time is not None and abs((current_datetime - iridium_datetime).total_seconds()) > self.TIME_ERR_THRESHOLD:
