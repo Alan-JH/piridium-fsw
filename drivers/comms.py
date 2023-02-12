@@ -56,10 +56,8 @@ class Comms():
                 if n < 0:
                     num = (1 << 18) - (num & 0x3ffff)  # make sure num is 18 bits long, then twos comp
                     flt |= (1 << 18)  # set sign bit
-                else:
-                    flt |= num & 0x3ffff  # make sure num is 18 bits long
-                byte1, byte2, byte3 = (flt >> 16) & 0xff, (flt >> 8) & 0xff, flt & 0xff
-                encoded += [byte1, byte2, byte3]  # MSB FIRST, ..., # LSB LAST
+                flt |= num & 0x3ffff  # make sure num is 18 bits long (in the positive case), leaves sign untouched
+                encoded += [(flt >> 16) & 0xff, (flt >> 8) & 0xff, flt & 0xff]  # MSB FIRST, ..., # LSB LAST
         else:
             data = "".join(packet.return_data).encode("ascii")
             for d in data: encoded.append(d)
