@@ -115,22 +115,12 @@ class Comms():
                 self.transmission_queue.pop(0)
             result = self.radio.sbd_initiate_x() # add error handling
             if result[0] not in [0, 1, 2, 3, 4]:
-                match result[0]:
-                    case 33:
-                        raise ValueError(details="Error transmitting buffer, Antenna fault")
-                    case 16:
-                        raise ValueError(details="Error transmitting buffer, ISU locked")
-                    case 15:
-                        raise ValueError(details="Error transmitting buffer, Gateway reports that Access is Denied")
-                    case 10 | 11| 12 | 13 | 14 | 17 | 18 | 19 | 32 | 35 | 36 | 37 | 38: 
-                        # These all vaguely indicate no signal, or at least the issue is not hardware fault
-                        break
-                    case 65:
-                        raise ValueError(details="Error transmitting buffer, Hardware Error (PLL Lock failure)")
-                    case 34:
-                        raise ValueError(details="Error transmitting buffer, Radio is disabled (see AT*Rn)")
-                    case _:
-                        raise ValueError(details=f"Error transmitting buffer, error code {result[0]}")
+                if result[0] in [10, 11, 12, 13, 14, 17, 18, 19, 32, 35, 36, 37, 38]:
+                    # These all vaguely indicate no signal, or at least the issue is not hardware fault
+                    break
+                else:
+                    raise ValueError(details=f"Error transmitting buffer, error code {result[0]}")
+            
             if result[2] == 1:
                 self.received_queue.append(self.decode(self.radio.read_mt())) # add error handling
             
