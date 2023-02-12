@@ -44,15 +44,6 @@ class Comms():
         encoded.append(self.ENCODED_REGISTRY.index(packet.descriptor)) # Fourth byte descriptor
         if packet.numerical: # Encode float data if applicable
             for n in packet.return_data:
-                # Jank way to check for NaN without figuring out where to import it from
-                try:
-                    n = float(n)
-                    int(n)
-                except ValueError as e:
-                    if "nan" in repr(e) or "NaN" in repr(e):
-                        n = 0
-                    else:
-                        raise ValueError(repr(e))
                 #  convert from float or int to twos comp half precision, bytes are MSB FIRST
                 flt = 0
                 if n != 0:
@@ -60,28 +51,18 @@ class Comms():
                 else:
                     exp = 0
                 if exp < 0:
-                    exp = abs(exp)
-                    exp &= 0xf  # make sure exp is 4 bits, cut off anything past the 4th
-                    signexp = (1 << 4) - exp  # twos comp
-                    flt |= signexp << 19
-                    flt |= 1 << 23
-                else:
-                    flt |= (exp & 0xf) << 19  # make sure exp is 4 bits, cut off anything past the 4th, shift left 19
+                    exp = (1 << 4) - (abs(exp) & 0xf) # make sure exp is 4 bits, cut off anything past the 4th, take abs val and twos comp
+                    flt |= 1 << 23 # set sign bit
+                flt |= (exp & 0xf) << 19  # make sure exp is 4 bits, cut off anything past the 4th, shift left 19. Leaves sign untouched
                 # num will always have five digits, with trailing zeros if necessary to fill it in
                 num = abs(int((n / (10 ** exp)) * 10000))
                 if n < 0:
-                    num &= 0x3ffff  # make sure num is 18 bits long
-                    num = (1 << 18) - num  # twos comp
-                    flt |= num
+                    num = (1 << 18) - (num & 0x3ffff)  # make sure num is 18 bits long, then twos comp
                     flt |= (1 << 18)  # set sign bit
-                else:
-                    flt |= num & 0x3ffff  # make sure num is 18 bits long
-                byte1 = (flt >> 16) & 0xff
-                byte2 = (flt >> 8) & 0xff
-                byte3 = flt & 0xff
-                encoded.append(byte1)  # MSB FIRST
-                encoded.append(byte2)
-                encoded.append(byte3)  # LSB LAST
+                flt |= (num & 0x3ffff)  # make sure num is 18 bits long (in the positive case), leaves sign untouched
+                encoded.append((flt >> 16) & 0xff)  # MSB FIRST
+                encoded.append((flt >> 8) & 0xff)
+                encoded.append(flt & 0xff)  # LSB LAST
         else:
             data = "".join(packet.return_data).encode("ascii")
             for d in data:
@@ -94,33 +75,28 @@ class Comms():
         :param message: (byte string) sbdrb output
         :return: (packet) output packet
         """
-        length = message[:2]  # check length and checksum against message length and sum
-        length = length[1] + (length[0] << 8)
-        checksum = message[-2:]
-        checksum = checksum[1] + (checksum[0] << 8)
+        length = message[1] + (message[0] << 8) # check length (first two bytes) and checksum (last two bytes) against message length and sum
+        checksum = message[-1] + (message[-2] << 8)
         msg = message[2:-2]
-        actual_checksum = sum(msg) & 0xffff
 
-        if checksum != actual_checksum or length != len(msg):
+        if checksum != (sum(msg) & 0xffff) or length != len(msg):
             raise ValueError("Incorrect checksum/length")
         if msg[0] < 0 or msg[0] >= len(self.ENCODED_REGISTRY):
             raise ValueError("Invalid command received")
-        decoded = self.ENCODED_REGISTRY[msg[0]]
+        command = self.ENCODED_REGISTRY[msg[0]]
         args = []
         for i in range(1, len(msg) - 2, 3):
-            num = (msg[i] << 16) | (msg[i + 1] << 8) | (msg[i + 2])  # msb first
+            num = (msg[i] << 16) | (msg[i + 1] << 8) | (msg[i + 2])  # MSB first
             exp = num >> 19  # extract exponent
             if exp & (1 << 4) == 1:  # convert twos comp
-                exp &= 0x10  # truncate first bit
-                exp -= (1 << 4)
+                exp = (exp & 0x10) - (1 << 4)
             coef = num & 0x7ffff  # extract coefficient
             if coef & (1 << 18) == 1:  # convert twos comp
-                coef &= 0x3ffff  # truncate first bit
-                coef -= (1 << 18)
+                coef = (coef & 0x3ffff) - (1 << 18)
             if coef != 0:
                 coef /= 10 ** int(math.log10(abs(coef)))
             args.append(coef * 10 ** exp)
-        return Packet(decoded, args=args)
+        return Packet(command, args=args)
     
     def contact(self):
         """
