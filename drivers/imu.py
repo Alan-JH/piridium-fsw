@@ -23,15 +23,13 @@ from math import degrees
 def _twos_comp_to_signed(val, bits):
     # Convert an unsigned integer in 2's compliment form of the specified bit
     # length to its signed integer value and return it.
-    if val & (1 << (bits - 1)) != 0:
-        return val - (1 << bits)
-    return val
+    if val & (1 << (bits - 1)) != 0: return val - (1 << bits)
+    else: return val
  
 def _signed_to_twos_comp(val, bits):
     # Convert a signed integer to unsigned int in 2's complement form
     # bits is number of bits, with sign bit
-    if val < 0:
-        val += (1 << bits)
+    if val < 0: val += (1 << bits)
     return val
 
 class IMU():

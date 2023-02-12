@@ -46,10 +46,7 @@ class Comms():
             for n in packet.return_data:
                 #  convert from float or int to twos comp half precision, bytes are MSB FIRST
                 flt = 0
-                if n != 0:
-                    exp = int(math.floor(math.log10(abs(n))))
-                else:
-                    exp = 0
+                exp = int(math.floor(math.log10(abs(n)))) if n != 0 else 0
                 if exp < 0:
                     exp = (1 << 4) - (abs(exp) & 0xf) # make sure exp is 4 bits, cut off anything past the 4th, take abs val and twos comp
                     flt |= 1 << 23 # set sign bit
@@ -59,14 +56,13 @@ class Comms():
                 if n < 0:
                     num = (1 << 18) - (num & 0x3ffff)  # make sure num is 18 bits long, then twos comp
                     flt |= (1 << 18)  # set sign bit
-                flt |= (num & 0x3ffff)  # make sure num is 18 bits long (in the positive case), leaves sign untouched
-                encoded.append((flt >> 16) & 0xff)  # MSB FIRST
-                encoded.append((flt >> 8) & 0xff)
-                encoded.append(flt & 0xff)  # LSB LAST
+                else:
+                    flt |= num & 0x3ffff  # make sure num is 18 bits long
+                byte1, byte2, byte3 = (flt >> 16) & 0xff, (flt >> 8) & 0xff, flt & 0xff
+                encoded += [byte1, byte2, byte3]  # MSB FIRST, ..., # LSB LAST
         else:
             data = "".join(packet.return_data).encode("ascii")
-            for d in data:
-                encoded.append(d)
+            for d in data: encoded.append(d)
         return encoded
 
     def __decode(self, message):
