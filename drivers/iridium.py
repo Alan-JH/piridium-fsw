@@ -33,6 +33,10 @@ class Iridium():
 
     EPOCH = datetime.datetime(2014, 5, 11, 14, 23, 55).timestamp()  # As of 2022, Epoch date is 5 May, 2014, at 14:23:55 GMT
 
+    LOAD_MSG_ERRORS = {1: "Iridium Timeout",
+                       2: "Incorrect Checksum",
+                       3: "Message too long"}
+
     def __init__(self, gpio):
         self.gpio = gpio
         self.gpio.modem_on()
@@ -116,12 +120,7 @@ class Iridium():
                 raise ValueError("Iridium Timeout")
             result += self.read()
         i = int(result.split("\r\n")[1])  # '\r\n0\r\n\r\nOK\r\n' format
-        if i == 1:
-            raise ValueError("Iridium Timeout")
-        if i == 2:
-            raise ValueError("Incorrect Checksum")
-        if i == 3:
-            raise ValueError("Message too long")
+        if i in LOAD_MSG_ERRORS: raise ValueError(LOAD_MSG_ERRORS[i])
 
     def sbd_initiate_x(self):
         """
@@ -151,9 +150,7 @@ class Iridium():
         :return: (datetime) current time (use str() to parse to string if needed)
         """
         raw = self.request("AT-MSSTM")
-        if raw.find("OK") == -1:
-            return None
-        if raw.find("no network service") != -1:
+        if raw.find("OK") == -1 or raw.find("no network service") != -1:
             return None
         raw = raw.split("MSSTM:")[1].split("\n")[0].strip()
         if is_hex(raw):

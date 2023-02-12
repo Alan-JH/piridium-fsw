@@ -82,6 +82,5 @@ class GPIO():
         Reads payload gpio if it is in input mode
         returns 0 for low, 1 for high, 2 if not in input mode
         """
-        if mode:
-            return 2
+        if mode: return 2
         return gp.input(PAYLOAD_GPIO)
