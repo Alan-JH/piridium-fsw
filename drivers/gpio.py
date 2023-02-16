@@ -10,18 +10,26 @@ NET_AVAIL = 12 # Modem net availability indicator
 PAYLOAD_PWR = 26 # Payload power control
 PAYLOAD_GPIO = 19 # Payload GPIO pin
 
+GPIO_INITIALIZED = False
+
+def start():
+    if GPIO_INITIALIZED:
+        raise Warning("GPIO Already Initialized!")
+    else:
+        gp.setmode(gp.BCM)
+        gp.setup(HANDSHAKE, gp.OUT)
+
+
 
 class GPIO():
     def __init__(self):
         gp.setmode(gp.BCM)
-        gp.setup(HANDSHAKE, gp.OUT)
-        gp.output(HANDSHAKE, gp.LOW)
+        
         gp.setup(MODEM_ON_OFF, gp.OUT)
         gp.output(MODEM_ON_OFF, gp.LOW)
         gp.setup(RING_INDICATOR, gp.IN)
         gp.setup(NET_AVAIL, gp.IN)
-        gp.setup(PAYLOAD_PWR, gp.OUT)
-        gp.output(PAYLOAD_PWR, gp.LOW)
+        
         self.payload_gpio_mode = 0 # Initialize with gpio set to input
         self.set_gpio_mode(0)
 

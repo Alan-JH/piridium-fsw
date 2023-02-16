@@ -156,8 +156,6 @@ class Iridium():
         if is_hex(raw):
             processed = int(raw, 16) * 90 / 1000
             return datetime.datetime.fromtimestamp(processed + Iridium.EPOCH)
-        return None
-
 
     def geolocation(self):
         """
@@ -204,38 +202,6 @@ class Iridium():
             return 0
         return int(raw[raw.find("CSQF:") + 5: raw.find("CSQF:") + 6])
 
-    def serial_test(self) -> bool:
-        """
-        Checks the state of the serial port (initializing it if needed) and verifies that AT returns OK
-        :return: (bool) serial connection is working
-        """
-        if self.serial is None:
-            self.serial = Serial(port=self.PORT, baudrate=self.BAUDRATE, timeout=1)  # connect serial
-        self.serial.flush()
-        result = self.request("AT", 1)  # Give Iridium one second to respond
-        if result.find("OK") != -1:
-            return True
-        return False
-
-    def functional(self):
-        """
-        Tests Iridium by loading a message into one buffer, transferring to the other, and reading the message
-        :return: (bool) buffers functional
-        """
-        if self.serial_test():
-            result = self.request("AT+SBDWT=test")
-            if result.find("OK") == -1:
-                return False
-            result = self.request("AT+SBDTC", 1)
-            if result.find("Outbound SBD Copied to Inbound SBD: size = 4") == -1:
-                return False
-            result = self.request("AT+SBDRT")
-            if result.find("test") == -1:
-                return False
-            self.write("AT+SBDD2")  # clear all buffers
-            return True
-        return False
-
     def process(self, cmd, arg="", timeout=0.5):
         """
         Clean up data string
@@ -273,7 +239,6 @@ class Iridium():
         :return: (bool) if the serial write worked
         """
         self.serial.write((command + "\r").encode("utf-8"))
-        return True
 
     def read(self) -> str:
         """
@@ -282,11 +247,8 @@ class Iridium():
         """
         output = bytes()
         for _ in range(50):
-            try:
-                next_byte = self.serial.read(size=1)
-            except:
-                break
-            if next_byte == bytes():
-                break
+            try: next_byte = self.serial.read(size=1)
+            except Exception: break
+            if next_byte == bytes(): break
             output += next_byte
         return output.decode("utf-8")

@@ -4,7 +4,7 @@ from iridium import Iridium
 import datetime
 import copy
 
-class Comms():
+class Comms:
     MAX_PACKET_SIZE = 300
     HEADER_SIZE = 4
     FLOAT_LEN = 3
