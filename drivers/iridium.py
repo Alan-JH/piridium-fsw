@@ -125,7 +125,7 @@ def load_mo(message):
     time.sleep(1)  # 1 second to respond
     if  read().find("READY") == -1:
         raise ValueError("Iridium Timeout")
-     serial.write(message)
+    serial.write(message)
     time.sleep(1)  # 1 second to respond
     result = ""
     t = time.perf_counter()
