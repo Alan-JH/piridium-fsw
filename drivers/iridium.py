@@ -258,7 +258,7 @@ def write(command: str) -> bool:
     :param command: (str) Command to write
     :return: (bool) if the serial write worked
     """
-     serial.write((command + "\r").encode("utf-8"))
+    serial.write((command + "\r").encode("utf-8"))
 
 def read() -> str:
     """
@@ -267,7 +267,7 @@ def read() -> str:
     """
     output = bytes()
     for _ in range(50):
-        try: next_byte =  serial.read(size=1)
+        try: next_byte = serial.read(size=1)
         except Exception: break
         if next_byte == bytes(): break
         output += next_byte
