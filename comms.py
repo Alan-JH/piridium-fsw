@@ -62,7 +62,7 @@ def pop_command_queue():
     """
     return received_queue.pop(0)
 
-def __encode(packet):
+def _encode(packet):
     """
     Encodes a packet to raw byte list. Does NOT consider packet length
     :param packet: (Packet) packet to encode
@@ -94,7 +94,7 @@ def __encode(packet):
         for d in data: encoded.append(d)
     return encoded
 
-def __decode(message):
+def _decode(message):
     """
     Decodes processed SBDRB output and converts to packet
     :param message: (byte string) sbdrb output
@@ -130,12 +130,12 @@ def contact():
     # Check receive buffer
     stat = iridium.sbd_status()
     if stat[2] == 1:
-        received_queue.append(__decode(iridium.read_mt())) # add error handling
+        received_queue.append(_decode(iridium.read_mt())) # add error handling
 
     # While signal, transmit and receive, and update buffers
     while gpio.read_network_available():
         if len(transmission_queue) > 0:
-            msg = __encode(transmission_queue[0])
+            msg = _encode(transmission_queue[0])
             iridium.load_mo(msg) # add error handling
             transmission_queue.pop(0)
         result = iridium.sbd_initiate_x() # add error handling
@@ -147,7 +147,7 @@ def contact():
                 raise ValueError(details=f"Error transmitting buffer, error code {result[0]}")
         
         if result[2] == 1:
-            received_queue.append(__decode(iridium.read_mt())) # add error handling
+            received_queue.append(_decode(iridium.read_mt())) # add error handling
         
         if (result[2] == 0 or result[2] == 2) and len(transmission_queue) == 0: #issue: this will call sbdix one time more than necessary, rack up overcharges
             break

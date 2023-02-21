@@ -65,7 +65,7 @@ def shutdown():
     """
     Calls AT*F and closes serial
     """
-    request("AT*F", 1)
+    _request("AT*F", 1)
     serial.close()
     MODEM_INITIALIZED = False
 
@@ -74,7 +74,7 @@ def soft_reset():
     """
     Resets settings without a power cycle
     """
-    request("ATZn", 1)
+    _request("ATZn", 1)
     
 @check_initialized
 def sbd_status():
@@ -87,7 +87,7 @@ def sbd_status():
     MTMSN: sequence number in the next mobile terminated SBD session, -1 if nothing in the MT buffer
     :return: (list) SBD Status return
     """
-    return [int(i) for i in  process("AT+SBDS").split(",")]
+    return [int(i) for i in _process("AT+SBDS").split(",")]
 
 @check_initialized
 def read_mt():
@@ -96,7 +96,7 @@ def read_mt():
     Doesnt use request because we don't to decode as utf-8
     :return: (list) raw list of bytes
     """
-    write("AT+SBDRB")
+    _write("AT+SBDRB")
     raw = serial.read(50)
     t = time.perf_counter()
     while raw.find(b'OK') == -1:
@@ -121,9 +121,9 @@ def load_mo(message):
     # Final response: 0: success, 1: timeout (insufficient number of bytes transferred in 60 seconds)
     # 2: Checksum does not match calculated checksum, 3: message length too long or short
     # Keep messages 340 bytes or shorter for 9602N modem
-    write(f"AT+SBDWB={length}")  # Specify bytes to write
+    _write(f"AT+SBDWB={length}")  # Specify bytes to write
     time.sleep(1)  # 1 second to respond
-    if  read().find("READY") == -1:
+    if _read().find("READY") == -1:
         raise ValueError("Iridium Timeout")
     serial.write(message)
     time.sleep(1)  # 1 second to respond
@@ -132,7 +132,7 @@ def load_mo(message):
     while result.find("OK") == -1:
         if time.perf_counter() - t > 5:
             raise ValueError("Iridium Timeout")
-        result += read()
+        result += _read()
     i = int(result.split("\r\n")[1])  # '\r\n0\r\n\r\nOK\r\n' format
     if i in LOAD_MSG_ERRORS: raise ValueError(LOAD_MSG_ERRORS[i])
 
@@ -149,14 +149,14 @@ def sbd_initiate_x():
     MT queued: number of MT messages in GSS waiting to be transferred to ISU
     :return: (list) SBDIX call result
     """
-    return [int(i) for i in  process("AT+SBDIX", timeout=60).split(",")]
+    return [int(i) for i in _process("AT+SBDIX", timeout=60).split(",")]
 
 @check_initialized
 def clear_buffers():
     """
     Clears both SBD buffers
     """
-    request("AT+SBDD2")
+    _request("AT+SBDD2")
 
 @check_initialized
 def network_time():
@@ -166,7 +166,7 @@ def network_time():
     that have elapsed since the epoch
     :return: (datetime) current time (use str() to parse to string if needed)
     """
-    raw = request("AT-MSSTM")
+    raw = _request("AT-MSSTM")
     if raw.find("OK") == -1 or raw.find("no network service") != -1:
         return None
     raw = raw.split("MSSTM:")[1].split("\n")[0].strip()
@@ -183,7 +183,7 @@ def geolocation():
     Converts from cartesian to lat/long/alt
     :return: (tuple) lat, long, altitude, time (unix timestamp)
     """
-    raw = process("AT-MSGEO").split(",")  # raw x, y, z, timestamp
+    raw = _process("AT-MSGEO").split(",")  # raw x, y, z, timestamp
     timestamp_time = int(raw[3], 16) * 90 / 1000 + Iridium.EPOCH
     lon = math.degrees(math.atan2(float(raw[1]), float(raw[0])))
     lat = math.degrees(math.atan2(float(raw[2]), ((float(raw[1]) ** 2 + float(raw[0]) ** 2) ** 0.5)))
@@ -197,8 +197,8 @@ def register(location=None):
     :param location: (str) Optional location param, format [+|-]DDMM.MMM,[+|-]dddmm.mmm
     :return: (str) raw processed result
     """
-    if location: return process("AT+SBDREG", "=" + location)
-    else: return process("AT+SBDREG")
+    if location: return _process("AT+SBDREG", "=" + location)
+    else: return _process("AT+SBDREG")
 
 @check_initialized
 def check_signal_active():
@@ -206,7 +206,7 @@ def check_signal_active():
     Actively requests strength of satellite connection, may take up to ten seconds if iridium is in satellite handoff
     :return: (int) CSQ from 0 (weakest) to 5 (strongest)
     """
-    raw = request("AT+CSQ", 10)  
+    raw = _request("AT+CSQ", 10)  
     if raw.find("CSQ:") == -1:
         return 0
     return int(raw[raw.find("CSQ:") + 4: raw.find("CSQ:") + 5])
@@ -217,22 +217,22 @@ def check_signal_passive():
     Passively check signal strength, for transmit/receive timing. By default updates every 40 seconds
     :return: (int) last known CSQ from 0 (weakest) to 5 (strongest)
     """
-    raw = request("AT+CSQF")  
+    raw = _request("AT+CSQF")  
     if raw.find("CSQF:") == -1:
         return 0
     return int(raw[raw.find("CSQF:") + 5: raw.find("CSQF:") + 6])
 
-def process(cmd, arg="", timeout=0.5):
+def _process(cmd, arg="", timeout=0.5):
     """
     Clean up data string
     :param cmd: (str) command, including AT+ or AT- prefix
     :param arg: (str) argument
     :param timeout: (float) seconds before it gives up
     """
-    data = request(cmd + arg, timeout)
+    data = _request(cmd + arg, timeout)
     return data.split(cmd[3:] + ":")[1].split("\r\nOK")[0].strip()
 
-def request(command: str, timeout=0.5) -> str:
+def _request(command: str, timeout=0.5) -> str:
     """
     Requests information from Iridium and returns unprocessed response
     :param command: Command to send
@@ -240,19 +240,19 @@ def request(command: str, timeout=0.5) -> str:
     :return: (str) Response from Iridium
     """
     serial.flush()
-    write(command)
+    _write(command)
     result = ""
     sttime = time.perf_counter()
     while time.perf_counter() - sttime < timeout:
         time.sleep(.1)
-        result +=  read()
+        result += _read()
         if result.find("ERROR") != -1:
             return command[2:] + "ERROR" + "\n"  # formatted so that process() can still decode properly
         if result.find("OK") != -1:
             return result
     raise ValueError("Iridium Timeout")
 
-def write(command: str) -> bool:
+def _write(command: str) -> bool:
     """
     Write a command to the serial port.
     :param command: (str) Command to write
@@ -260,7 +260,7 @@ def write(command: str) -> bool:
     """
     serial.write((command + "\r").encode("utf-8"))
 
-def read() -> str:
+def _read() -> str:
     """
     Reads in as many available bytes as it can if timeout permits.
     :return: (str) string read from iridium

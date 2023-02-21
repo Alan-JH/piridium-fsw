@@ -116,7 +116,7 @@ def read_payload_gpio():
     if mode: raise Warning("Payload GPIO is not in input mode, not reading input")
     else: return gp.input(PAYLOAD_GPIO)
 
-def __sample(channel):
+def _sample(channel):
     """
     Reads and returns the 12 bit reading of the specified ADC channel
     :param channel: (int) ADC channel, from 0 to 7 inclusive
@@ -129,28 +129,28 @@ def __sample(channel):
 
 @check_initialized
 def solar_i_1():
-    return __sample(0) / 0.4
+    return _sample(0) / 0.4
 
 @check_initialized
 def solar_v_1():
-    return __sample(1) * 8.5
+    return _sample(1) * 8.5
 
 @check_initialized
 def solar_i_2():
-    return __sample(2) / 0.4
+    return _sample(2) / 0.4
 
 @check_initialized
 def solar_v_2():
-    return __sample(3) * 8.5
+    return _sample(3) * 8.5
 
 @check_initialized
 def battery_v():
-    return __sample(4) * 3
+    return _sample(4) * 3
 
 @check_initialized
 def battery_i():
-    return __sample(5) / 0.4
+    return _sample(5) / 0.4
 
 @check_initialized
 def payload_i():
-    return __sample(6) / 0.4
+    return _sample(6) / 0.4
