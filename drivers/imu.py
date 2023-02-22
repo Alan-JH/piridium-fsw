@@ -182,13 +182,6 @@ class IMU():
         time.sleep(0.01)
 
      
-    def functional(self):
-        chip_id = self._read_register(IMU._ID_REGISTER)
-        if chip_id != IMU._CHIP_ID:
-            raise IMUError(details="bad chip id (%x != %x)" % (chip_id, IMU._CHIP_ID))
-        return True
-
-     
     def _reset(self):
         """Resets the sensor to default settings."""
         self.mode = IMU.CONFIG_MODE

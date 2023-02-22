@@ -43,12 +43,14 @@ def check_initialized(func):
 
     return wrap
 
+
 def __is_hex(string):
     try:
         int(string, 16)
         return True
     except ValueError:
         return False
+
 
 def start():
     """MUST be called after the modem is powered on"""
@@ -188,7 +190,7 @@ def geolocation():
     lon = math.degrees(math.atan2(float(raw[1]), float(raw[0])))
     lat = math.degrees(math.atan2(float(raw[2]), ((float(raw[1]) ** 2 + float(raw[0]) ** 2) ** 0.5)))
     alt = (float(raw[0]) ** 2 + float(raw[1]) ** 2 + float(raw[2]) ** 2) ** 0.5
-    return (lat, lon, alt, timestamp_time)
+    return lat, lon, alt, timestamp_time
 
 @check_initialized
 def register(location=None):
