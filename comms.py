@@ -1,11 +1,12 @@
 # High level radio handling
 
-from drivers import iridium, gpio
-import datetime
+from drivers import gpio
+from drivers.iridium import Iridium
+from datetime import datetime
 import copy
 
 global MAX_PACKET_SIZE, HEADER_SIZE, FLOAT_LEN, TIME_ERR_THRESHOLD, \
-    transmission_queue, received_queue, ENCODED_REGISTRY
+    transmission_queue, received_queue, ENCODED_REGISTRY, iridium
 MAX_PACKET_SIZE = 300
 HEADER_SIZE = 4
 FLOAT_LEN = 3
@@ -17,25 +18,29 @@ ENCODED_REGISTRY = {
     0: "filler"
 }
 
+iridium = None
 
 def start():
     """
     Starts all items
     """
+    global iridium
     gpio.start()
     gpio.power_modem_on()
-    iridium.start()
+    iridium = Iridium(port="/dev/serial0", baudrate=19200)
 
 
 def disconnect():
     """
     Shuts down the Iridium modem
     """
+    global iridium
     try:
         iridium.check_buffer()
         iridium.shutdown()
     except Exception: pass  # serial doesn't work
     gpio.power_modem_off()
+    iridium = None
 
 
 def append_to_queue(packet):
@@ -57,6 +62,7 @@ def peek_command_queue():
     """
     Returns first packet from the queue
     """
+    global received_queue
     return received_queue[0]
 
 
@@ -64,6 +70,7 @@ def pop_command_queue():
     """
     Removes and returns first packet in queue
     """
+    global received_queue
     return received_queue.pop(0)
 
 
@@ -73,6 +80,7 @@ def _encode(packet):
     :param packet: (Packet) packet to encode
     :return: (List) encoded data
     """
+    global ENCODED_REGISTRY
     encoded_bytes_list = [(packet.index << 1) & 0x7f | packet.numerical] # First byte numerical/index
     date = (packet.timestamp.day << 11) | (packet.timestamp.hour << 6) | packet.timestamp.minute  # second and third bytes date
     encoded_bytes_list += [(date >> 8) & 0xff, date & 0xff, ENCODED_REGISTRY.index(packet.descriptor)]  # 1st date byte, 2nd date byte, 4th byte descriptor
@@ -103,6 +111,7 @@ def _decode(message):
     :param message: (byte string) sbdrb output
     :return: (packet) output packet
     """
+    global ENCODED_REGISTRY
     length = message[1] + (message[0] << 8) # check length (first two bytes) and checksum (last two bytes) against message length and sum
     checksum = message[-1] + (message[-2] << 8)
     msg = message[2:-2]
@@ -126,6 +135,7 @@ def contact():
     """
     Transmits contents of transmission queue while reading in messages to received queue
     """
+    global iridium
     # Check receive buffer
     stat = iridium.sbd_status()
     if stat[2] == 1: received_queue.append(_decode(iridium.read_mt())) # add error handling
@@ -150,13 +160,15 @@ def update_time():
     """
     Updates system time from Iridium time
     """
-    current_datetime = datetime.datetime.utcnow()
+    global iridium, TIME_ERR_THRESHOLD
+    current_datetime = datetime.utcnow()
     time = iridium.network_time()
     if time is not None and abs((current_datetime - iridium_datetime).total_seconds()) > TIME_ERR_THRESHOLD:
         os.system(f"sudo date -s \"{iridium_datetime.strftime('%Y-%m-%d %H:%M:%S UTC')}\" ")  # Update system time
         os.system("sudo hwclock -w")  # Write to RTC        
 
 def geolocation():
+    global iridium
     return iridium.geolocation() # add error handling
     
 
@@ -174,4 +186,4 @@ class Packet:
         return f"{self.descriptor} at {self.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}, index: {self.index}, numerical {self.numerical}: {self.return_data}"
 
     def set_time(self):
-        self.timestamp = datetime.datetime.utcnow()
+        self.timestamp = datetime.utcnow()
