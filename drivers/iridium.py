@@ -76,7 +76,7 @@ class Iridium:
         while raw.find(b'OK') == -1:
             if time.perf_counter() - t > 5: raise ValueError("Iridium Timeout")
             raw += self.serial.read(50)
-        return list(raw[raw.find(b'SBDRB') + 7:].split(b'\r\nOK')[0])
+        return list(raw[raw.find(b'SBDRB') + 6:].split(b'\r\nOK')[0])
 
 
     def load_mo(self, message):
