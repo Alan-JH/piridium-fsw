@@ -133,7 +133,7 @@ class Iridium:
         raw = self._request("AT-MSSTM")
         if raw.find("OK") != -1 and raw.find("no network service") == -1:
             raw = raw.split("MSSTM:")[1].split("\n")[0].strip()
-            return datetime.fromtimestamp(int(raw, 16) * 90 / 1000 + Iridium.EPOCH)
+            return datetime.fromtimestamp(int(raw, 16) * 90 / 1000 + EPOCH)
 
     def geolocation(self):
         """
@@ -144,7 +144,7 @@ class Iridium:
         :return: (tuple) lat, long, altitude, time (unix timestamp)
         """
         raw = self._process("AT-MSGEO").split(",")  # raw x, y, z, timestamp
-        location_timestamp = int(raw[3], 16) * 90 / 1000 + Iridium.EPOCH
+        location_timestamp = int(raw[3], 16) * 90 / 1000 + EPOCH
         # Convert XYZ cartesian to latitude, longitude, altitude
         lon = math.degrees(math.atan2(float(raw[1]), float(raw[0])))
         lat = math.degrees(math.atan2(float(raw[2]), ((float(raw[1]) ** 2 + float(raw[0]) ** 2) ** 0.5)))
