@@ -32,7 +32,7 @@ class Iridium:
         MUST be called after the modem is powered on
         """
         self.serial = Serial(port=port, baudrate=baudrate, timeout=1)  # connect serial
-        while not serial.is_open:
+        while not self.serial.is_open:
             time.sleep(0.5)
 
 
