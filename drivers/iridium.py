@@ -1,7 +1,7 @@
 # Iridium 9602N Modem Driver
 
 from serial import Serial
-import time
+import time, math
 from datetime import datetime
 
 # https://www.beamcommunications.com/document/328-iridium-isu-at-command-reference-v5
